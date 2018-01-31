@@ -110,12 +110,12 @@ def remove_old_builds(repo, branch, keepbuilds, buildtype=None):
     put_location = branch
   else:
     put_location = buildtype
-  if put(script_dir + '/../util/remove_old_builds.sh', '/var/www/live.%s.%s' % (repo, put_location), mode=0755).failed:
+  if put(script_dir + '/../util/remove_old_builds.sh', '/srv/www/live.%s.%s' % (repo, put_location), mode=0755).failed:
     raise SystemExit("Could not copy the remove builds script to the application server, aborting so it's clear there was a problem, even though this is the last step")
   else:
     print "===> Remove builds script copied to %s:/var/www/live.%s.%s/remove_old_builds.sh" % (env.host, repo, put_location)
 
-  sudo("/var/www/live.%s.%s/remove_old_builds.sh -d /var/www -r %s -b %s -k %s" % (repo, put_location, repo, put_location, keepbuilds))
+  sudo("/srv/www/live.%s.%s/remove_old_builds.sh -d /var/www -r %s -b %s -k %s" % (repo, put_location, repo, put_location, keepbuilds))
 
 
 # Adjust symlink in /var/www/project to point to the new build
@@ -388,11 +388,11 @@ def perform_client_sync_hook(path_to_application, buildtype, stage):
                 print "We found %s in the %s file, so as a result, we are not running that hook file." % (disallowed, option)
                 malicious_code = True
                 break
-  
+
           if not malicious_code:
             if option[-2:] == 'sh':
               print "===> Executing shell script %s" % option
-  
+
               run("chmod +x %s/build-hooks/%s" %(path_to_application, option))
               if stage != 'pre':
                 with settings(warn_only=True):
