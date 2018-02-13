@@ -37,7 +37,7 @@ def adjust_settings_php(repo, branch, build, buildtype, alias, site):
     # 1. First check if the settings.inc file exists in 'config'
     if run("stat /var/www/config/%s_%s.settings.inc" % (alias, branch)).failed:
       # 2. We didn't find the shared file. Check if settings.php exists for this site.
-      print "The shared settings file /var/www/config/%s_%s.settings.inc was not found. We'll try and move a sites/%s/settings.php file there, if it exists." % (alias, branch, repo, branch, site)
+      print "The shared settings file /var/www/config/%s_%s.settings.inc was not found. We'll try and move a sites/%s/settings.php file there, if it exists." % (alias, branch, repo)
       if run("stat /var/www/%s_%s_%s/www/sites/%s/settings.php" % (repo, branch, build, site)).failed:
         # 3. Doesn't look like settings.php exists for this site. We'll see if a $branch.settings.php file exists instead, as a last resort.
         print "We couldn't find /var/www/%s_%s_%s/www/sites/%s/settings.php, so we'll search for a buildtype specific file as a last resort." % (repo, branch, build, site)
