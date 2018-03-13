@@ -8,47 +8,91 @@ import common.Utils
 import Revert
 
 
+# Function to set up a site mapping for Drupal multisites, if applicable.
+@task
+def configure_site_mapping(repo, mapping, config):
+  sites = []
+  # [Sites] is defined in config.ini
+  if config.has_section("Sites"):
+    print "===> Found a Sites section. Determining which sites to deploy..."
+    for option in config.options("Sites"):
+      line = config.get("Sites", option)
+      line = line.split(',')
+      for sitename in line:
+        sitename = sitename.strip()
+        sites.append(sitename)
+
+  if not sites:
+    print "There isn't a Sites section, so we assume this is standard deployment."
+    buildsite = 'default'
+    alias = repo
+    mapping.update({alias:buildsite})
+  # @TODO: can this use sites.php?
+  else:
+    dirs = os.walk('www/sites').next()[1]
+    for buildsite in dirs:
+      if buildsite in sites:
+        if buildsite == 'default':
+          alias = repo
+        else:
+          alias = "%s_%s" % (repo, buildsite)
+        mapping.update({alias:buildsite})
+
+  print "Final mapping is: %s" % mapping
+  return mapping
+
+
 @task
 def drush_fra_branches(config, branch):
+  # @TODO temporary, this can go once nobody uses [Features] in config.ini any more
   # If a 'branches' option exists in the [Features] section in config.ini, proceed
-  if config.has_option("Features", "branches"):
-    branches = []
-    # Get the 'branches' option from under the [Features] section
-    revert_features = config.get("Features", "branches")
-    if revert_features == "*":
-      #just append the current branch
-      branches.append(branch)
+  # THIS IS DEPRECATED
+  feature_branches = common.ConfigFile.return_config_item(config, "Features", "branches", "string", None, True, True, "Drupal")
+
+  if feature_branches is not None:
+    revert_branches = []
+    if feature_branches == "*":
+      revert_branches.append(branch)
     else:
-      # Split the 'branches' option using a comma as a delimeter
-      revert_features = revert_features.split(',')
-      # For each value, strip it and add it to the branches list, which will be searched later
-      for each_branch in revert_features:
+      feature_branches = feature_branches.split(',')
+      for each_branch in feature_branches:
         each_branch = each_branch.strip()
-        branches.append(each_branch)
-  # If a 'branches' option does not exist in the [Features] section, add master and stage
-  # to the branches list. This is prevent any current jobs using the previous version of
-  # this function to break
+        revert_branches.append(each_branch)
   else:
-    branches = ['master', 'stage']
-  return branches
+    revert_branches = ['master', 'stage']
 
+  # If a 'feature_branches' option exists in the [Build] section in config.ini, proceed
+  # THIS IS DEPRECATED
+  feature_branches = common.ConfigFile.return_config_item(config, "Build", "feature_branches", "string", None, True, True, "Drupal")
 
-# Set the default maintenance/readonly method
-@task
-def configure_readonlymode(config):
-  # If config.ini has a [Readonly] section, proceed option
-  if config.has_section("Readonly"):
-    # Check that the [Readonly] section has a readonly option
-    if config.has_option("Readonly", "readonly"):
-      # Get the value of readonly in config.ini
-      return config.get("Readonly", "readonly")
+  if feature_branches is not None:
+    revert_branches = []
+    if feature_branches == "*":
+      revert_branches.append(branch)
+    else:
+      feature_branches = feature_branches.split(',')
+      for each_branch in feature_branches:
+        each_branch = each_branch.strip()
+        revert_branches.append(each_branch)
+  else:
+    revert_branches = ['master', 'stage']
 
+  # If a 'feature_branches' option exists in the [Drupal] section in config.ini, proceed
+  feature_branches = common.ConfigFile.return_config_item(config, "Drupal", "feature_branches", "string", None, True, False)
 
-# Config the config_export hook
-def configure_config_export(config):
-  if config.has_section("Hooks"):
-    if config.has_option("Hooks", "config_export"):
-      return config.getboolean("Hooks", "config_export")
+  if feature_branches is not None:
+    revert_branches = []
+    if feature_branches == "*":
+      revert_branches.append(branch)
+    else:
+      feature_branches = feature_branches.split(',')
+      for each_branch in feature_branches:
+        each_branch = each_branch.strip()
+        revert_branches.append(each_branch)
+  else:
+    revert_branches = ['master', 'stage']
+
+  return revert_branches
 
 
 # Take a database backup
@@ -235,8 +279,8 @@ def run_composer_install(repo, branch, build, composer_lock, no_dev):
 
   # Sometimes we will want to remove composer.lock prior to installing
   with settings(warn_only=True):
-    print "===> Removing composer.lock prior to attempting an install"
-    if composer_lock == False:
+    if not composer_lock:
+      print "===> Removing composer.lock prior to attempting an install"
       run ("rm %s/composer.lock" % path)
       run ("rm -R %s/vendor" % path)
 
@@ -301,7 +345,7 @@ def drush_updatedb(repo, branch, build, site, alias, drupal_version):
 @roles('app_primary')
 def drush_fra(repo, branch, build, site, alias, drupal_version):
   with cd("/var/www/%s_%s_%s/www/sites/%s" % (repo, branch, build, site)):
-    if run("drush pm-list --pipe --type=module --status=enabled --no-core | grep -q ^features$"):
+    if run("drush pm-list --pipe --type=module --status=enabled --no-core | grep -q ^features$").return_code != 0:
       print "===> Features module not installed, skipping feature revert"
     else:
       print "===> Reverting all features..."

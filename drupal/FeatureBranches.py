@@ -31,7 +31,7 @@ def initial_db_and_config(repo, branch, build, import_config, drupal_version):
         print "Could not carry out entity updates! Continuing anyway, as this probably isn't a major issue."
 
     # Import config
-    if drupal_version == '8' and import_config == True:
+    if drupal_version == '8' and import_config:
       print "===> Importing configuration for Drupal 8 site..."
       if sudo("su -s /bin/bash www-data -c 'cd /var/www/%s_%s_%s/www/sites/default && drush -y cim'" % (repo, branch, build)).failed:
         print "Could not import configuration! Failing build."
@@ -43,14 +43,16 @@ def initial_db_and_config(repo, branch, build, import_config, drupal_version):
 
 # Sets all the variables for a feature branch InitialBuild
 @task
-def configure_feature_branch(buildtype, config, branch):
+def configure_feature_branch(buildtype, config, branch, alias):
   # Set up global variables required in main()
   global httpauth_pass
   global ssl_enabled
   global ssl_ip
   global ssl_cert
   global drupal_common_config
-  global url
+  global featurebranch_url
+
+  featurebranch_url = None
 
 
   # If the buildtype is 'custombranch', which it will be when deploying a custom branch (i.e one
@@ -113,10 +115,10 @@ def configure_feature_branch(buildtype, config, branch):
           if config.has_option("featurebranch", "urltemplate"):
             print "Feature Branch: Found a urltemplate option..."
             urltemplate = config.get("featurebranch", "urltemplate")
-            urltemplate = urltemplate.replace("reponame", repo, 1)
+            urltemplate = urltemplate.replace("reponame", alias, 1)
             urltemplate = urltemplate.replace("branchname", branch, 1)
             print "urltemplate is now %s" % urltemplate
-            url = urltemplate
+            featurebranch_url = urltemplate
 
           if config.has_option("featurebranch", "drupalcommonconfig"):
             print "Feature Branch: Found a drupalcommonconfig option..."
@@ -132,7 +134,7 @@ def remove_site(repo, branch, alias):
   # Drop DB...
   with cd("/var/www/live.%s.%s/www/sites/default" % (repo, branch)):
     with settings(warn_only=True):
-      dbname = sudo("drush status 2>&1 | grep \"Database name \" | cut -d \":\" -f 2")
+      dbname = sudo("drush status 2>&1 | grep \"Database name \|DB name \" | cut -d \":\" -f 2")
       print "DEBUG INFO: dbname = %s" % dbname
 
       # If the dbname variable is empty for whatever reason, resort to grepping settings.php

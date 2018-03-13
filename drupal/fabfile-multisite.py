@@ -73,13 +73,13 @@ def main(repo, repourl, build, branch, buildtype, url=None, profile="minimal", k
   execute(Multisite.create_config_dir)
 
   # Compile variables for feature branch builds (if applicable)
-  FeatureBranches.configure_feature_branch(buildtype, config, branch)
-  print "Feature branch debug information below:"
-  print "httpauth_pass: %s" % FeatureBranches.httpauth_pass
-  print "ssl_enabled: %s" % FeatureBranches.ssl_enabled
-  print "ssl_cert: %s" % FeatureBranches.ssl_cert
-  print "ssl_ip: %s" % FeatureBranches.ssl_ip
-  print "drupal_common_config: %s" % FeatureBranches.drupal_common_config
+  #FeatureBranches.configure_feature_branch(buildtype, config, branch, alias)
+  #print "Feature branch debug information below:"
+  #print "httpauth_pass: %s" % FeatureBranches.httpauth_pass
+  #print "ssl_enabled: %s" % FeatureBranches.ssl_enabled
+  #print "ssl_cert: %s" % FeatureBranches.ssl_cert
+  #print "ssl_ip: %s" % FeatureBranches.ssl_ip
+  #print "drupal_common_config: %s" % FeatureBranches.drupal_common_config
 
   # Prepare variables for various Drupal tasks
   if config.has_section("Features"):
@@ -87,7 +87,8 @@ def main(repo, repourl, build, branch, buildtype, url=None, profile="minimal", k
     if fra:
       branches = Drupal.drush_fra_branches(config)
 
-  readonlymode = Drupal.configure_readonlymode(config)
+  readonlymode = common.ConfigFile.return_config_item(config, "Readonly", "readonly", "string", "maintenance", True, True, replacement_section="Drupal")
+  readonlymode = common.ConfigFile.return_config_item(config, "Drupal", "readonly", "string", readonlymode)
 
   # Compile a site mapping, which is needed if this is a multisite build
   mapping = Multisite.configure_site_mapping(repo, mapping, config)
@@ -99,7 +100,8 @@ def main(repo, repourl, build, branch, buildtype, url=None, profile="minimal", k
   # [Hooks]
   # config_export: True
   #
-  config_export = Drupal.configure_config_export(config)
+  config_export = common.ConfigFile.return_config_item(config, "Hooks", "config_export", "boolean", False, True, True, replacement_section="Drupal")
+  config_export = common.ConfigFile.return_config_item(config, "Drupal", "config_export", "boolean", config_export)
 
   # Prepare Behat variables
   if config.has_section("Behat"):

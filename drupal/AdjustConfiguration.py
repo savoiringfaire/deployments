@@ -16,7 +16,7 @@ def adjust_settings_php(repo, branch, build, buildtype, alias, site):
       # No "config" directory
       sudo("mkdir --mode 0755 /var/www/config")
       sudo("chown jenkins:www-data /var/www/config")
-      
+
   # In some cases it seems jenkins loses write permissions to the site directory
   # Let's make sure!
   sudo("chmod -R 775 /var/www/%s_%s_%s/www/sites/%s" % (repo, branch, build, site))
@@ -102,8 +102,8 @@ if (file_exists($file)) {
         print "There's a settings.inc file, but no main settings.php file. We'll symlink in our settings.inc file."
         run("ln -s /var/www/config/%s_%s.settings.inc /var/www/%s_%s_%s/www/sites/%s/settings.php" % (alias, branch, repo, branch, build, site))
       else:
-        print "We found a settings.inc file AND a main settings.php file. We'll move settings.php to settings.php.bak and symlink in the settings.inc file."
-        sudo("mv /var/www/%s_%s_%s/www/sites/%s/settings.php /var/www/%s_%s_%s/www/sites/%s/settings.php.bak" % (repo, branch, build, site, repo, branch, build, site))
+        print "We found a settings.inc file AND a main settings.php file. We'll move settings.php to backup.settings.php and symlink in the settings.inc file."
+        sudo("mv /var/www/%s_%s_%s/www/sites/%s/settings.php /var/www/%s_%s_%s/www/sites/%s/backup.settings.php" % (repo, branch, build, site, repo, branch, build, site))
         run("ln -s /var/www/config/%s_%s.settings.inc /var/www/%s_%s_%s/www/sites/%s/settings.php" % (alias, branch, repo, branch, build, site))
 
 
@@ -128,4 +128,3 @@ def adjust_drushrc_php(repo, branch, build, site):
         print "Could not copy /var/www/%s_%s_%s/www/sites/%s/%s.drushrc.php to /var/www/%s_%s_%s/www/sites/%s/drushrc.php. Continuing with build, but perhaps have a look into why the file couldn't be copied." % (repo, branch, build, site, branch, repo, branch, build, site)
       else:
         print "Copied /var/www/%s_%s_%s/www/sites/%s/%s.drushrc.php to /var/www/%s_%s_%s/www/sites/%s/drushrc.php" % (repo, branch, build, site, branch, repo, branch, build, site)
-
