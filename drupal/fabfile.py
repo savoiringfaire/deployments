@@ -239,7 +239,6 @@ def initial_build_wrapper(url, repo, branch, build, site, alias, profile, buildt
   execute(common.Services.reload_webserver, hosts=env.roledefs['app_all'])
   # Do some final Drupal config tweaking
   execute(InitialBuild.generate_drush_alias, repo, url, branch, alias)
-  execute(Drupal.secure_admin_password, repo, branch, build, site, drupal_version)
   execute(Drupal.generate_drush_cron, repo, branch)
 
   # If this is autoscale at AWS, we need to remove *.settings.php from autoscale initial build folders
@@ -259,10 +258,11 @@ def initial_build_wrapper(url, repo, branch, build, site, alias, profile, buildt
       execute(InitialBuild.initial_build_config_import, repo, branch, build, site, drupal_version)
       execute(Drupal.drush_clear_cache, repo, branch, build, site, drupal_version)
 
+  execute(Drupal.secure_admin_password, repo, branch, build, site, drupal_version)
+
   # Let's allow developers to perform some post-build actions if they need to
   execute(common.Utils.perform_client_deploy_hook, repo, branch, build, buildtype, config, stage='post', hosts=env.roledefs['app_all'])
   execute(common.Utils.perform_client_deploy_hook, repo, branch, build, buildtype, config, stage='post-initial', hosts=env.roledefs['app_all'])
-
 
 # Wrapper function for building an existing site
 @task
