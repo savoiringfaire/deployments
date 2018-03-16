@@ -60,6 +60,7 @@ def main(repo, repourl, build, branch, buildtype, keepbuilds=10, url=None, fresh
   notifications_email = common.ConfigFile.return_config_item(config, "Build", "notifications_email")
   # Need to keep potentially passed in 'url' value as default
   url = common.ConfigFile.return_config_item(config, "Build", "url", "string", url)
+  share_main_files = common.ConfigFile.return_config_item(config, "Build", "share_main_files")
 
   # Can be set in the config.ini [Database] section
   db_name = common.ConfigFile.return_config_item(config, "Database", "db_name")
@@ -235,7 +236,7 @@ def initial_build_wrapper(url, www_root, repo, branch, build, site, alias, profi
   execute(common.Utils.create_shared_directory, hosts=env.roledefs['app_all'])
   # Build out Drupal
   execute(InitialBuild.initial_build_create_live_symlink, repo, branch, build)
-  execute(InitialBuild.initial_build, repo, url, branch, build, site, alias, profile, buildtype, sanitise, config, db_name, db_username, db_password, mysql_version, mysql_config, dump_file, sanitised_password, sanitised_email, cluster, rds)
+  execute(InitialBuild.initial_build, repo, url, branch, build, site, alias, profile, buildtype, sanitise, config, db_name, db_username, db_password, mysql_version, mysql_config, dump_file, sanitised_password, sanitised_email, cluster, rds, syncbranch, share_main_files)
   execute(InitialBuild.initial_build_create_files_symlink, repo, branch, build, site, alias)
   execute(InitialBuild.initial_build_move_settings, alias, branch)
   # Configure the server

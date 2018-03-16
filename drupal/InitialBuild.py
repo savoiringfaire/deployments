@@ -47,7 +47,8 @@ def initial_build_create_files_symlink(repo, branch, build, site, alias):
       sudo("chmod 775 /var/www/%s_%s_%s/www/sites/%s/files_bak" % (repo, branch, build, site))
       sudo("find /var/www/%s_%s_%s/www/sites/%s/files_bak -type d -print0 | xargs -r -0 chmod 775" % (repo, branch, build, site))
       sudo("find /var/www/%s_%s_%s/www/sites/%s/files_bak -type f -print0 | xargs -r -0 chmod 664" % (repo, branch, build, site))
-      sudo("mv /var/www/%s_%s_%s/www/sites/%s/files_bak/* /var/www/shared/%s_%s_files/" % (repo, branch, build, site, alias, branch))
+      if not share_main_files:
+        sudo("mv /var/www/%s_%s_%s/www/sites/%s/files_bak/* /var/www/shared/%s_%s_files/" % (repo, branch, build, site, alias, branch))
   print "===> Creating files symlink"
   sudo("ln -s /var/www/shared/%s_%s_files /var/www/%s_%s_%s/www/sites/%s/files" % (alias, branch, repo, branch, build, site))
 
@@ -84,18 +85,24 @@ def initial_build_config_import(repo, branch, build, site, drupal_version):
 # Stuff to do when this is the initial build
 @task
 @roles('app_primary')
-def initial_build(repo, url, branch, build, site, alias, profile, buildtype, sanitise, config, db_name, db_username, db_password, mysql_version, mysql_config, dump_file, sanitised_password, sanitised_email, cluster=False, rds=False):
+def initial_build(repo, url, branch, build, site, alias, profile, buildtype, sanitise, config, db_name, db_username, db_password, mysql_version, mysql_config, dump_file, sanitised_password, sanitised_email, cluster=False, rds=False, syncbranch, share_main_files=False):
   print "===> This looks like the first build! We have some things to do.."
 
-  print "===> Making the shared files dir and setting symlink"
-  sudo("mkdir -p /var/www/shared/%s_%s_files" % (alias, branch))
-  sudo("chown jenkins:www-data /var/www/shared/%s_%s_files" % (alias, branch))
-  sudo("chmod 775 /var/www/shared/%s_%s_files" % (alias, branch))
+  if buildtype == "custombranch" and share_main_files:
+    print "===> Symlinking the shared files dir to %s" % (syncbranch)
+    sudo("ln -s /var/www/shared/%s_%s_files /var/www/shared/%s_%s_files" % (alias, syncbranch, alias, branch))
+    print "===> Symlinking the private files dir to %s" % (syncbranch)
+    sudo("ln -s /var/www/shared/%s_%s_private_files /var/www/shared/%s_%s_private_files" % (alias, syncbranch, alias, branch))
+  else:
+    print "===> Making the shared files dir and setting symlink"
+    sudo("mkdir -p /var/www/shared/%s_%s_files" % (alias, branch))
+    sudo("chown jenkins:www-data /var/www/shared/%s_%s_files" % (alias, branch))
+    sudo("chmod 775 /var/www/shared/%s_%s_files" % (alias, branch))
 
-  print "===> Making the private files dir"
-  sudo("mkdir -p /var/www/shared/%s_%s_private_files" % (alias, branch))
-  sudo("chown jenkins:www-data /var/www/shared/%s_%s_private_files" % (alias, branch))
-  sudo("chmod 775 /var/www/shared/%s_%s_private_files" % (alias, branch))
+    print "===> Making the private files dir"
+    sudo("mkdir -p /var/www/shared/%s_%s_private_files" % (alias, branch))
+    sudo("chown jenkins:www-data /var/www/shared/%s_%s_private_files" % (alias, branch))
+    sudo("chmod 775 /var/www/shared/%s_%s_private_files" % (alias, branch))
 
   print "===> Preparing the database"
 
@@ -182,9 +189,10 @@ if (file_exists($file)) {
           print "===> Data sanitised, email domain set to %s+%%uid@%s, passwords set to %s" % (alias, sanitised_email, sanitised_password)
           print "Sanitised database."
 
-  print "===> Correcting files directory permissions and ownership..."
-  sudo("chown -R jenkins:www-data /var/www/shared/%s_%s_files" % (alias, branch))
-  sudo("chmod 775 /var/www/shared/%s_%s_files" % (alias, branch))
+  if not share_main_files:
+    print "===> Correcting files directory permissions and ownership..."
+    sudo("chown -R jenkins:www-data /var/www/shared/%s_%s_files" % (alias, branch))
+    sudo("chmod 775 /var/www/shared/%s_%s_files" % (alias, branch))
 
   print "===> Temporarily moving settings.php to shared area /var/www/shared/%s_%s.settings.inc so all servers in a cluster can access it" % (alias, branch)
   sudo("mv /var/www/%s_%s_%s/www/sites/%s/settings.php /var/www/shared/%s_%s.settings.inc" % (repo, branch, build, site, alias, branch))
@@ -323,5 +331,3 @@ def initial_build_vhost(repo, url, branch, build, alias, buildtype, ssl_enabled,
   # Add the changes back into Git and push
   #local("cd /tmp/puppet_for_%s && git add -f . && git commit -m 'Added %s.conf vhost'")
   #local("cd /tmp/puppet_for_%s && git-jenkins-push -i /var/lib/jenkins/.ssh/id_rsa_gitlab_push push origin master" % build)
-
-
