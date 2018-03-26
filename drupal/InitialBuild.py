@@ -39,7 +39,7 @@ def initial_build_create_live_symlink(repo, branch, build):
 # files directory for the site with 777 perms. Move it aside and fix perms.
 @task
 @roles('app_all')
-def initial_build_create_files_symlink(repo, branch, build, site, alias):
+def initial_build_create_files_symlink(repo, branch, build, site, alias, share_main_files):
   with settings(warn_only=True):
     if run("stat /var/www/%s_%s_%s/www/sites/%s/files" % (repo, branch, build, site)).return_code == 0:
       print "===> Found a files directory, probably Drupal 8, making it safe"
@@ -85,7 +85,8 @@ def initial_build_config_import(repo, branch, build, site, drupal_version):
 # Stuff to do when this is the initial build
 @task
 @roles('app_primary')
-def initial_build(repo, url, branch, build, site, alias, profile, buildtype, sanitise, config, db_name, db_username, db_password, mysql_version, mysql_config, dump_file, sanitised_password, sanitised_email, cluster=False, rds=False, syncbranch, share_main_files=False):
+def initial_build(repo, url, branch, build, site, alias, profile, buildtype, sanitise, config, db_name, db_username, db_password, mysql_version, mysql_config, dump_file, sanitised_password, sanitised_email, syncbranch, cluster=False, rds=False, share_main_files=False):
+
   print "===> This looks like the first build! We have some things to do.."
 
   if buildtype == "custombranch" and share_main_files:

@@ -181,7 +181,7 @@ def main(repo, repourl, build, branch, buildtype, keepbuilds=10, url=None, fresh
     with settings(hide('warnings', 'stderr'), warn_only=True):
       if run("drush sa | grep ^@%s_%s$ > /dev/null" % (alias, branch)).failed:
         print "Didn't find a Drush alias %s_%s so we'll install this new site %s" % (alias, branch, url)
-        initial_build_wrapper(url, www_root, repo, branch, build, site, alias, profile, buildtype, sanitise, config, db_name, db_username, db_password, mysql_version, mysql_config, dump_file, sanitised_password, sanitised_email, cluster, rds, drupal_version, import_config, webserverport, behat_config, autoscale)
+        initial_build_wrapper(url, www_root, repo, branch, build, site, alias, profile, buildtype, sanitise, config, db_name, db_username, db_password, mysql_version, mysql_config, dump_file, sanitised_password, sanitised_email, cluster, rds, drupal_version, import_config, webserverport, behat_config, autoscale, syncbranch, share_main_files)
       else:
         # Otherwise it's an existing build
         existing_build_wrapper(url, www_root, repo, branch, build, buildtype, alias, site, no_dev, config, config_export, drupal_version, readonlymode, notifications_email, autoscale, do_updates, import_config, fra, run_cron, feature_branches)
@@ -226,7 +226,7 @@ def main(repo, repourl, build, branch, buildtype, keepbuilds=10, url=None, fresh
 
 # Wrapper function for carrying out a first build of a site
 @task
-def initial_build_wrapper(url, www_root, repo, branch, build, site, alias, profile, buildtype, sanitise, config, db_name, db_username, db_password, mysql_version, mysql_config, dump_file, sanitised_password, sanitised_email, cluster, rds, drupal_version, import_config, webserverport, behat_config, autoscale):
+def initial_build_wrapper(url, www_root, repo, branch, build, site, alias, profile, buildtype, sanitise, config, db_name, db_username, db_password, mysql_version, mysql_config, dump_file, sanitised_password, sanitised_email, cluster, rds, drupal_version, import_config, webserverport, behat_config, autoscale, syncbranch, share_main_files):
   print "===> URL is http://%s" % url
 
   print "===> Looks like the site %s doesn't exist. We'll try and install it..." % url
@@ -236,8 +236,8 @@ def initial_build_wrapper(url, www_root, repo, branch, build, site, alias, profi
   execute(common.Utils.create_shared_directory, hosts=env.roledefs['app_all'])
   # Build out Drupal
   execute(InitialBuild.initial_build_create_live_symlink, repo, branch, build)
-  execute(InitialBuild.initial_build, repo, url, branch, build, site, alias, profile, buildtype, sanitise, config, db_name, db_username, db_password, mysql_version, mysql_config, dump_file, sanitised_password, sanitised_email, cluster, rds, syncbranch, share_main_files)
-  execute(InitialBuild.initial_build_create_files_symlink, repo, branch, build, site, alias)
+  execute(InitialBuild.initial_build, repo, url, branch, build, site, alias, profile, buildtype, sanitise, config, db_name, db_username, db_password, mysql_version, mysql_config, dump_file, sanitised_password, sanitised_email, syncbranch, cluster, rds, share_main_files)
+  execute(InitialBuild.initial_build_create_files_symlink, repo, branch, build, site, alias, share_main_files)
   execute(InitialBuild.initial_build_move_settings, alias, branch)
   # Configure the server
   execute(AdjustConfiguration.adjust_settings_php, repo, branch, build, buildtype, alias, site)
