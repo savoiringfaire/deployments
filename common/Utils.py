@@ -29,8 +29,12 @@ def _sshagent_run(cmd, ssh_key=None):
 
 # Helper script to generate a random password
 @task
-def _gen_passwd(N=8):
-  return ''.join(random.choice(string.ascii_letters + string.digits) for x in range(N))
+def _gen_passwd(N=8, force_mix=False, number_of_numbers=2):
+  if force_mix:
+    password = ''.join(random.choice(string.ascii_letters) for x in range(N-number_of_numbers))
+    return password + ''.join(random.choice(string.digits) for x in range(number_of_numbers))
+  else:
+    return ''.join(random.choice(string.ascii_letters + string.digits) for x in range(N))
 
 
 # Helper script to generate a random token
@@ -66,7 +70,11 @@ def generate_url(url, repo, branch):
 # Tasks for getting previous build strings for path and database
 @task
 def get_previous_build(repo, branch, build):
-  return run("readlink /var/www/live.%s.%s" % (repo, branch))
+  with settings(warn_only=True):
+    if run("readlink /var/www/live.%s.%s" % (repo, branch)).failed:
+      return None
+    else:
+      return run("readlink /var/www/live.%s.%s" % (repo, branch))
 
 @task
 def get_previous_db(repo, branch, build):
@@ -116,6 +124,14 @@ def remove_old_builds(repo, branch, keepbuilds, buildtype=None):
     print "===> Remove builds script copied to %s:/var/www/live.%s.%s/remove_old_builds.sh" % (env.host, repo, put_location)
 
   sudo("/srv/www/live.%s.%s/remove_old_builds.sh -d /var/www -r %s -b %s -k %s" % (repo, put_location, repo, put_location, keepbuilds))
+
+
+# Create a link to the application location on initial build
+@task
+def initial_build_create_live_symlink(repo, buildtype, build):
+  print "===> Setting the live document root symlink"
+  # We need to force this to avoid a repeat of https://redmine.codeenigma.net/issues/20779
+  sudo("ln -nsf /var/www/%s_%s_%s /var/www/live.%s.%s" % (repo, buildtype, build, repo, buildtype))
 
 
 # Adjust symlink in /var/www/project to point to the new build
@@ -307,6 +323,25 @@ def create_shared_directory():
       print "===> Shared directory already exists"
 
 
+# Function returning True if a bad string is found
+@task
+def detect_malicious_strings(malicious_strings, input_string=None, check_location=None):
+  malicious_strings_found = False
+  with settings(warn_only=True):
+    for disallowed in malicious_strings:
+      if check_location:
+        print "===> Checking %s for malicious strings" % check_location
+        if run("grep -r '%s' %s" % (disallowed, check_location)).return_code == 0:
+          print "###### We found %s in the location %s" % (disallowed, check_location)
+          malicious_strings_found = True
+      if input_string:
+        print "===> Checking %s for malicious strings" % input_string
+        if run("echo '%s' | grep '%s'" % (input_string, disallowed)).return_code == 0:
+          print "###### We found %s in the provided string" % (disallowed)
+          malicious_strings_found = True
+  return malicious_strings_found
+
+
 # @TODO build_path is temporary, it's currently branch from Drupal
 # Ultimately we can remove entirely and just use buildtype, once
 # Drupal scripts are repaired.
@@ -324,12 +359,10 @@ def perform_client_deploy_hook(repo, build_path, build, buildtype, config, stage
         print "Skipping %s hook file because it is not set to 1 in config.ini." % option
       else:
         malicious_code = False
-        with settings(warn_only=True):
-          for disallowed in malicious_commands:
-            if run("grep '%s' /var/www/%s_%s_%s/build-hooks/%s" % (disallowed, repo, build_path, build, option)).return_code == 0:
-              print "We found %s in the %s file, so as a result, we are not running that hook file." % (disallowed, option)
-              malicious_code = True
-              break
+        this_hook = "/var/www/%s_%s_%s/build-hooks/%s" % (repo, build_path, build, option)
+        malicious_code = detect_malicious_strings(malicious_commands, False, this_hook)
+        if malicious_code:
+          break
 
         if not malicious_code:
           if option[-2:] == 'sh':
@@ -384,13 +417,11 @@ def perform_client_sync_hook(path_to_application, buildtype, stage):
           print "Skipping %s hook file because it is not set to 1 in config.ini." % option
         else:
           malicious_code = False
-          with settings(warn_only=True):
-            for disallowed in malicious_commands:
-              if run("grep '%s' %s/build-hooks/%s" % (disallowed, path_to_application, option)).return_code == 0:
-                print "We found %s in the %s file, so as a result, we are not running that hook file." % (disallowed, option)
-                malicious_code = True
-                break
-
+          this_hook = "%s/build-hooks/%s" % (path_to_application, option)
+          malicious_code = detect_malicious_strings(malicious_commands, False, this_hook)
+          if malicious_code:
+            break
+  
           if not malicious_code:
             if option[-2:] == 'sh':
               print "===> Executing shell script %s" % option
@@ -543,8 +574,8 @@ def check_package(method):
 # Tarball up an application for future fresh EC2 instances entering an autoscale group
 @task
 @roles('app_primary')
-def tarball_up_to_s3(repo, buildtype, build, autoscale):
-  with cd("/var/www/%s_%s_%s" % (repo, buildtype, build)):
+def tarball_up_to_s3(www_root, repo, buildtype, build, autoscale):
+  with cd("%s/%s_%s_%s" % (www_root, repo, buildtype, build)):
     print("===> Tarballing up the build to S3 for future EC2 instances")
     sudo("rm -f /tmp/%s.tar.gz" % repo)
     run("tar -zcf /tmp/%s.tar.gz ." % repo)

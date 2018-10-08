@@ -9,6 +9,7 @@ import ConfigParser
 import common.ConfigFile
 import common.Services
 import common.Utils
+import common.PHP
 import AdjustConfiguration
 import Symfony
 import InitialBuild
@@ -27,9 +28,32 @@ config = common.ConfigFile.read_config_file()
 
 
 @task
-def main(repo, repourl, branch, build, buildtype, siteroot, keepbuilds=10, buildtype_override=False, ckfinder=False, keepbackup=False, migrations=False, cluster=False, with_no_dev=True):
+def main(repo, repourl, branch, build, buildtype, siteroot, keepbuilds=10, url=None, buildtype_override=False, ckfinder=False, keepbackup=False, migrations=False, cluster=False, with_no_dev=True, php_ini_file=None):
 
-  user = 'jenkins'
+  # Set some default config options and variables
+  user = "jenkins"
+  previous_build = ""
+  previous_db = ""
+  statuscake_paused = False
+  www_root = "/var/www"
+  site_root = www_root + '/%s_%s_%s' % (repo, buildtype, build)
+  site_link = www_root + '/live.%s.%s' % (repo, buildtype)
+
+  # For reasons known only to Python, it evaluates with_no_dev=False as the string "False"
+  if with_no_dev == "False":
+    with_no_dev = False
+
+  # Can be set in the config.ini [Build] section
+  ssh_key = common.ConfigFile.return_config_item(config, "Build", "ssh_key")
+  notifications_email = common.ConfigFile.return_config_item(config, "Build", "notifications_email")
+  # Need to keep potentially passed in 'url' value as default
+  url = common.ConfigFile.return_config_item(config, "Build", "url", "string", url)
+  php_ini_file = common.ConfigFile.return_config_item(config, "Build", "php_ini_file", "string", php_ini_file)
+
+  # Can be set in the config.ini [Composer] section
+  composer = common.ConfigFile.return_config_item(config, "Composer", "composer", "boolean", True)
+  composer_lock = common.ConfigFile.return_config_item(config, "Composer", "composer_lock", "boolean", True)
+  no_dev = common.ConfigFile.return_config_item(config, "Composer", "no_dev", "boolean", with_no_dev)
 
   # Set SSH key if needed
   ssh_key = None
@@ -54,6 +78,13 @@ def main(repo, repourl, branch, build, buildtype, siteroot, keepbuilds=10, build
     console_buildtype = buildtype_override
   else:
     console_buildtype = buildtype
+
+  # Check the php_ini_file string isn't doing anything naughty
+  malicious_code = False
+  malicious_code = common.Utils.detect_malicious_strings([';', '&&'], php_ini_file)
+  # Set CLI PHP version, if we need to
+  if php_ini_file and not malicious_code:
+    run("export PHPRC='%s'" % php_ini_file)
 
   # Let's allow developers to perform some early actions if they need to
   execute(common.Utils.perform_client_deploy_hook, repo, buildtype, build, buildtype, config, stage='pre', hosts=env.roledefs['app_all'])
@@ -86,22 +117,25 @@ def main(repo, repourl, branch, build, buildtype, siteroot, keepbuilds=10, build
 
   # Only run composer if there is no vendor directory
   with settings(warn_only=True):
-    if run("stat /var/www/%s_%s_%s/vendor" % (repo, buildtype, build)).failed:
-      # Generally we want to run as prod because dev just enables developer tools
+    if composer:
+      # Generally we want to run with SYMFONY_ENV=prod because dev just enables developer tools
       # If someone wants to override this, we can pass "dev" as buildtype_override above
-      execute(Symfony.composer_install, repo, buildtype, build, console_buildtype, with_no_dev)
+      execute(common.PHP.composer_command, site_root, "install", None, no_dev, composer_lock, False, False, console_buildtype)
   if migrations:
     execute(Symfony.run_migrations, repo, buildtype, build, console_buildtype)
 
   if ckfinder:
     execute(Symfony.ckfinder_install, repo, buildtype, build, console_buildtype)
 
+  # Unset CLI PHP version if we need to
+  if php_ini_file:
+    run("export PHPRC=''")
+
 # Probably obsolete, parameters_BUILDTYPE.yml files should autoload
 # @TODO: delete post testing
 #  update_local_parameters(repo, buildtype, build)
 
   execute(Symfony.clear_cache, repo, buildtype, build, console_buildtype)
-  # @TODO - this is Drupal specific. Oops!
   execute(common.Utils.adjust_live_symlink, repo, branch, build, buildtype, hosts=env.roledefs['app_all'])
   execute(common.Services.clear_php_cache, hosts=env.roledefs['app_all'])
   execute(common.Services.clear_varnish_cache, hosts=env.roledefs['app_all'])

@@ -9,6 +9,7 @@ import ConfigParser
 import common.ConfigFile
 import common.Services
 import common.Utils
+import common.PHP
 import Drupal
 import DrupalTests
 import DrupalUtils
@@ -129,6 +130,10 @@ def main(repo, repourl, build, branch, buildtype, url=None, profile="minimal", k
     execute(common.Utils.perform_client_deploy_hook, repo, branch, build, buildtype, config, stage='pre', hosts=env.roledefs['app_all'])
 
     # Because execute() returns an array of values returned keyed by hostname
+    ### @TODO: deprecated, can be removed later
+    drupal_version = common.ConfigFile.return_config_item(config, "Version", "drupal_version", "string", None, True, True, replacement_section="Drupal")
+    # This is the correct location for 'drupal_version' - note, respect the deprecated value as default
+    drupal_version = common.ConfigFile.return_config_item(config, "Drupal", "drupal_version", "string", drupal_version)
     drupal_version = DrupalUtils.determine_drupal_version(drupal_version, repo, branch, build, config)
     print "===> Set drupal_version variable to %s" % drupal_version
 
@@ -136,7 +141,13 @@ def main(repo, repourl, build, branch, buildtype, url=None, profile="minimal", k
       importconfig = "no"
 
     if drupal_version == '8' and composer is True:
-      execute(Drupal.run_composer_install, repo, branch, build, composer_lock, no_dev)
+      # Sometimes people use the Drupal Composer project which puts Drupal 8's composer.json file in repo root.
+      with settings(warn_only=True):
+        if run("find /var/www/%s_%s_%s/composer.json" % (repo, branch, build)).return_code == 0:
+          path = "/var/www/%s_%s_%s" % (repo, branch, build)
+        else:
+          path = "/var/www/%s_%s_%s/www" % (repo, branch, build)
+      execute(common.PHP.composer_command, path, "install", None, no_dev, composer_lock)
 
     new_sites = Multisite.check_for_new_installs(repo, branch, build, mapping)
     if new_sites is not None:

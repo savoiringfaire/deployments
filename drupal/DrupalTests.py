@@ -1,6 +1,10 @@
 from fabric.api import *
 from fabric.contrib.files import sed
 import os
+# Custom Code Enigma modules
+import common.Tests
+import common.PHP
+import DrupalUtils
 
 
 # Builds the variables needed to carry out Behat testing later
@@ -59,52 +63,68 @@ def prepare_behat_tests(config, buildtype):
 # Run tests that were enabled in the config file, if any
 @task
 @roles('app_primary')
-def run_tests(repo, branch, build, config):
+def run_tests(repo, branch, build, config, drupal_version, codesniffer=False, extensions=None, ignore=None, paths_to_test=None, www_root="/var/www"):
   print "===> Running tests..."
-  test_types = [ 'simpletest', 'coder' ]
-  for test_type in test_types:
-    if config.has_section(test_type):
-      for option in config.options(test_type):
-        if config.getint(test_type, option) == 1:
-          script_dir = os.path.dirname(os.path.realpath(__file__))
-          if put(script_dir + '/../util/run-tests', '/home/jenkins', mode=0755).failed:
-            print "===> Could not copy the test runner script to the application server, tests will not be run"
-          else:
-            print "===> Test runner script copied to %s:/home/jenkins/run-tests" % env.host
-            print "===> We will attempt to run %s against %s" % (test_type, option)
-            run("/home/jenkins/run-tests /var/www/%s_%s_%s/www %s %s | tee /tmp/%s.%s.review" % (repo, branch, build, test_type, option, repo, option))
-            run('egrep -q "\[normal\]|\[major\]|\[critical\]" /tmp/%s.%s.review && echo "Found errors running test %s!" && exit 1 || exit 0' % (repo, option, option))
-    else:
-      print "===> Didn't find any tests to run for %s" % test_type
+  if drupal_version > 7 and codesniffer:
+    print "===> Drupal 8 or higher, running CodeSniffer"
+    with settings(warn_only=True):
+      path_to_app = "%s/%s_%s_%s" % (www_root, repo, branch, build)
+      # Install Drupal CodeSniffer standards
+      common.PHP.composer_command(path_to_app, "install", "drupal/coder", True, True, True)
+      # Run CodeSniffer, note install=False, suppresses trying to reinstall CodeSniffer, which will fail
+      common.Tests.run_codesniffer(path_to_app, extensions, install=False, standard="Drupal", ignore=ignore, paths_to_test=paths_to_test, config_path="/home/jenkins/.composer/vendor/drupal/coder/coder_sniffer")
+      common.Tests.run_codesniffer(path_to_app, extensions, install=False, standard="DrupalPractice", ignore=ignore, paths_to_test=paths_to_test, config_path="/home/jenkins/.composer/vendor/drupal/coder/coder_sniffer")
+
+  # Obsolete really, but no harm in leaving Simpletest / Coder support for Drupal 7 for now
+  elif drupal_version < 8:
+    print "===> Drupal 7 or lower, looking for old simpletest / coder module tests"
+    test_types = [ 'simpletest', 'coder' ]
+    for test_type in test_types:
+      if config.has_section(test_type):
+        for option in config.options(test_type):
+          if config.getint(test_type, option) == 1:
+            script_dir = os.path.dirname(os.path.realpath(__file__))
+            if put(script_dir + '/../util/run-tests', '/home/jenkins', mode=0755).failed:
+              print "===> Could not copy the test runner script to the application server, tests will not be run"
+            else:
+              print "===> Test runner script copied to %s:/home/jenkins/run-tests" % env.host
+              print "===> We will attempt to run %s against %s" % (test_type, option)
+              run("/home/jenkins/run-tests %s/%s_%s_%s/www %s %s | tee /tmp/%s.%s.review" % (www_root, repo, branch, build, test_type, option, repo, option))
+              run('egrep -q "\[normal\]|\[major\]|\[critical\]" /tmp/%s.%s.review && echo "Found errors running test %s!" && exit 1 || exit 0' % (repo, option, option))
+      else:
+        print "===> Didn't find any tests to run for %s" % test_type
 
 
 # Run behat tests, if present
 @task
 @roles('app_primary')
-def run_behat_tests(repo, branch, build, alias, buildtype, url, ssl_enabled, junit, drupal_version, tags = [], disable_modules = []):
+def run_behat_tests(repo, branch, build, alias, site, buildtype, url, ssl_enabled, junit, drupal_version, tags = [], disable_modules = []):
   cwd = os.getcwd()
   continue_tests = True
   tests_failed = False
+  drush_runtime_location = "/var/www/%s_%s_%s/www/sites/%s" % (repo, branch, build, site)
 
   with settings(warn_only=True):
     while continue_tests:
       # Disable modules that enable HTTP auth.
       if disable_modules:
-        if drupal_version == '8':
+        if drupal_version > 7:
           for module in disable_modules:
-            if run("drush @%s_%s -y pm-uninstall %s" % (alias, branch, module)).failed:
-              print "Cannot disable %s. Stopping tests early..." % module
+            drush_command = "pm-uninstall %s" % module
+            if DrupalUtils.drush_command(drush_command, site, drush_runtime_location).failed:
+              print "###### Cannot disable %s. Stopping tests early..." % module
               continue_tests = False
               break
         else:
           for module in disable_modules:
-            if run("drush @%s_%s -y dis %s" % (alias, branch, module)).failed:
-              print "Cannot disable %s. Stopping tests early..." % module
+            drush_command = "dis %s" % module
+            if DrupalUtils.drush_command(drush_command, site, drush_runtime_location).failed:
+              print "###### Cannot disable %s. Stopping tests early..." % module
               continue_tests = False
               break
 
       with cd("/var/www/%s_%s_%s/tests/behat" % (repo, branch, build)):
-        run("composer install")
+        common.PHP.composer_command("/var/www/%s_%s_%s/tests/behat" % (repo, branch, build))
 
         if run("stat behat.yml").failed:
           # No behat.yml file, so let's move our buildtype specific behat file into place, if it exists.
@@ -180,24 +200,26 @@ def run_behat_tests(repo, branch, build, alias, buildtype, url, ssl_enabled, jun
 
     # Re-enable modules
     if disable_modules:
-      reenable_modules(alias, branch, buildtype, drupal_version, disable_modules)
+      reenable_modules(repo, alias, branch, build, site, buildtype, drupal_version, disable_modules)
 
     # Send test status back to main fabfile
     return tests_failed
 
 
 @task
-def reenable_modules(alias, branch, buildtype, drupal_version, enable_modules = []):
+def reenable_modules(repo, alias, branch, build, site, buildtype, drupal_version, enable_modules = []):
+  drush_runtime_location = "/var/www/%s_%s_%s/www/sites/%s" % (repo, branch, build, site)
   with settings(warn_only=True):
-    if drupal_version == '8':
-      if run("drush @%s_%s -y cim" % (alias, branch)).failed:
-        print "Cannot import config to enable modules. Manual investigation is required."
+    if drupal_version > 7:
+      if DrupalUtils.drush_command("cim", site, drush_runtime_location).failed:
+        print "###### Cannot import config to enable modules. Manual investigation is required."
       else:
-        print "Modules re-enabled via config import."
+        print " ===> Modules re-enabled via config import."
     else:
       if enable_modules:
         for module in enable_modules:
-          if run("drush @%s_%s -y en %s" % (alias, branch, module)).failed:
-            print "Cannot enable %s. Manual investigation is required." % module
+          drush_command = "pm-enable %s" % module
+          if DrupalUtils.drush_command(drush_command, site, drush_runtime_location).failed:
+            print "###### Cannot enable %s. Manual investigation is required." % module
           else:
-            print "%s re-enabled." % module
+            print "===> %s re-enabled." % module

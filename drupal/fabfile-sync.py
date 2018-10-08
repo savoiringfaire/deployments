@@ -47,7 +47,11 @@ def main(shortname, staging_branch, prod_branch, synctype='both', fresh_database
       orig_host = "%s@%s" % (env.user, env.host)
 
       # Get Drupal version
-      drupal_version = DrupalUtils.determine_drupal_version(drupal_version, shortname, staging_branch, 0, drupal_config, 'sync')
+      ### @TODO: deprecated, can be removed later
+      drupal_version = common.ConfigFile.return_config_item(config, "Version", "drupal_version", "string", None, True, True, replacement_section="Drupal")
+      # This is the correct location for 'drupal_version' - note, respect the deprecated value as default
+      drupal_version = common.ConfigFile.return_config_item(config, "Drupal", "drupal_version", "string", drupal_version)
+      drupal_version = int(DrupalUtils.determine_drupal_version(drupal_version, shortname, staging_branch, 0, drupal_config, 'sync'))
 
       # Allow developer to run a script prior to a sync
       common.Utils.perform_client_sync_hook(path_to_drupal, staging_branch, 'pre')
@@ -56,11 +60,15 @@ def main(shortname, staging_branch, prod_branch, synctype='both', fresh_database
       if synctype == 'db' or synctype == 'both':
         Sync.backup_db(staging_shortname, staging_branch)
         Sync.sync_db(orig_host, shortname, staging_shortname, staging_branch, prod_branch, fresh_database, sanitise, sanitised_password, sanitised_email, config)
+        # Allow developer to run a script mid-way through a sync
+        common.Utils.perform_client_sync_hook(path_to_drupal, staging_branch, 'mid-db')
         Sync.drush_updatedb(orig_host, staging_shortname, staging_branch)
 
       # Files syncing (uploads)
       if synctype == 'files' or synctype == 'both':
         Sync.sync_assets(orig_host, shortname, staging_shortname, staging_branch, prod_branch, config, remote_files_dir, staging_files_dir, sync_dir)
+        # Allow developer to run a script mid-way through a sync
+        common.Utils.perform_client_sync_hook(path_to_drupal, staging_branch, 'mid-files')
 
       # Cleanup
       Sync.clear_caches(orig_host, staging_shortname, staging_branch, drupal_version)
