@@ -123,15 +123,7 @@ def generate_drush_cron(repo, branch, autoscale=None):
   if exists("/etc/cron.d/%s_%s_cron" % (repo, branch)):
     print "===> Cron already exists, moving along"
   else:
-    if autoscale is None:
-      print "===> No cron job, creating one now"
-      now = datetime.datetime.now()
-      sudo("touch /etc/cron.d/%s_%s_cron" % (repo, branch))
-      append_string = """%s * * * *       www-data  /usr/local/bin/drush @%s_%s cron > /dev/null 2>&1""" % (now.minute, repo, branch)
-      append("/etc/cron.d/%s_%s_cron" % (repo, branch), append_string, use_sudo=True)
-      print "===> New Drupal cron job created at /etc/cron.d/%s_%s_cron" % (repo, branch)
-    else:
-      print "===> This is an autoscale layout, cron should be handled by another task runner such as Jenkins"
+    print "===> Crons disabled for development sites"
 
 
 # This function is used to get a fresh database of the site to import into the custom
